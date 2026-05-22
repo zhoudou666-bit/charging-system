@@ -2,10 +2,43 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from db import get_conn
 import random
+import datetime
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
 CORS(app)
+
+
+def cancel_expired_reservations():
+    """
+    自动取消超时预约：
+    已预约状态下，如果预约创建后 5 分钟内没有产生该充电桩的充电数据，
+    则自动把预约状态改为“已取消”。
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE reservation r
+        SET r.status = '已取消'
+        WHERE r.status = '已预约'
+          AND TIMESTAMPDIFF(MINUTE, r.create_time, NOW()) >= 5
+          AND NOT EXISTS (
+              SELECT 1
+              FROM charging_data d
+              WHERE d.pile_id = r.pile_id
+                AND d.create_time >= r.create_time
+                AND d.create_time <= DATE_ADD(r.create_time, INTERVAL 5 MINUTE)
+          )
+    """)
+
+    conn.commit()
+    affected = cursor.rowcount
+
+    cursor.close()
+    conn.close()
+
+    return affected
 
 
 @app.route("/")
@@ -50,6 +83,9 @@ def login():
 
 @app.route("/api/pile/list", methods=["GET"])
 def pile_list():
+    # 每次查询充电桩时，先自动取消超时预约
+    cancel_expired_reservations()
+
     conn = get_conn()
     cursor = conn.cursor()
 
@@ -68,6 +104,9 @@ def pile_list():
 
 @app.route("/api/stats", methods=["GET"])
 def stats():
+    # 每次刷新统计卡片时，先自动取消超时预约
+    cancel_expired_reservations()
+
     conn = get_conn()
     cursor = conn.cursor()
 
@@ -100,8 +139,15 @@ def stats():
         }
     })
 
+
 @app.route("/api/pile/simulate/<int:pile_id>", methods=["GET"])
 def simulate_data(pile_id):
+    """
+    模拟充电数据：
+    点击“查看实时数据”后，会插入一条 charging_data。
+    如果该充电桩存在“已预约”记录，则认为用户已经开始充电，
+    将预约状态改为“已充电”。
+    """
     voltage = round(random.uniform(215, 225), 2)
     current_value = round(random.uniform(1, 9), 2)
     power = round(voltage * current_value / 1000, 2)
@@ -116,6 +162,7 @@ def simulate_data(pile_id):
     conn = get_conn()
     cursor = conn.cursor()
 
+    # 插入充电数据
     cursor.execute(
         """
         INSERT INTO charging_data(pile_id, voltage, current_value, power, warning_status)
@@ -124,6 +171,19 @@ def simulate_data(pile_id):
         (pile_id, voltage, current_value, power, warning_status)
     )
 
+    # 如果该充电桩有未超时的预约，则标记为已充电
+    cursor.execute(
+        """
+        UPDATE reservation
+        SET status = '已充电'
+        WHERE pile_id = %s
+          AND status = '已预约'
+          AND TIMESTAMPDIFF(MINUTE, create_time, NOW()) < 5
+        """,
+        (pile_id,)
+    )
+
+    # 如果电流异常，生成预警
     if warning_status != "正常":
         cursor.execute(
             """
@@ -143,6 +203,7 @@ def simulate_data(pile_id):
 
     return jsonify({
         "code": 200,
+        "message": "实时数据获取成功",
         "data": {
             "pile_id": pile_id,
             "voltage": voltage,
@@ -151,6 +212,7 @@ def simulate_data(pile_id):
             "warning_status": warning_status
         }
     })
+
 
 @app.route("/api/charging-data/list", methods=["GET"])
 def charging_data_list():
@@ -176,6 +238,9 @@ def charging_data_list():
 
 @app.route("/api/reservation/add", methods=["POST"])
 def add_reservation():
+    # 新增预约前，先清理已经超时的旧预约
+    cancel_expired_reservations()
+
     data = request.json
 
     user_id = data.get("user_id")
@@ -183,8 +248,33 @@ def add_reservation():
     start_time = data.get("start_time")
     end_time = data.get("end_time")
 
+    if not user_id or not pile_id or not start_time or not end_time:
+        return jsonify({
+            "code": 400,
+            "message": "预约参数不完整"
+        })
+
     conn = get_conn()
     cursor = conn.cursor()
+
+    # 检查该充电桩是否已经有未完成预约
+    cursor.execute("""
+        SELECT id
+        FROM reservation
+        WHERE pile_id = %s
+          AND status = '已预约'
+        LIMIT 1
+    """, (pile_id,))
+
+    existed = cursor.fetchone()
+
+    if existed:
+        cursor.close()
+        conn.close()
+        return jsonify({
+            "code": 400,
+            "message": "该充电桩当前已有预约，请选择其他充电桩"
+        })
 
     cursor.execute(
         """
@@ -200,7 +290,43 @@ def add_reservation():
 
     return jsonify({
         "code": 200,
-        "message": "预约成功"
+        "message": "预约成功，请在 5 分钟内开始充电，否则系统将自动取消预约"
+    })
+
+
+@app.route("/api/reservation/list", methods=["GET"])
+def reservation_list():
+    # 查询预约记录前，自动取消超时预约
+    cancel_expired_reservations()
+
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            r.id,
+            r.user_id,
+            r.pile_id,
+            p.pile_name,
+            p.location,
+            r.start_time,
+            r.end_time,
+            r.status,
+            r.create_time
+        FROM reservation r
+        LEFT JOIN charging_pile p ON r.pile_id = p.id
+        ORDER BY r.create_time DESC
+    """)
+
+    data = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "code": 200,
+        "message": "预约记录获取成功",
+        "data": data
     })
 
 
