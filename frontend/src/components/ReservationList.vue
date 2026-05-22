@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>预约记录</h2>
-        <p>学生预约充电后，系统将在 5 分钟后自动确认充电，并生成一条正常充电记录。</p>
+        <p>学生预约充电后，预约有效期为 5 分钟；到期后系统自动确认充电，并生成正常充电记录。</p>
       </div>
 
       <el-button type="primary" @click="loadReservations">
@@ -13,6 +13,7 @@
 
     <el-table :data="reservationList" border style="width: 100%; margin-top: 18px;">
       <el-table-column prop="pile_name" label="充电桩" width="160" />
+
       <el-table-column prop="location" label="位置" width="180" />
 
       <el-table-column label="预约开始时间" min-width="190">
@@ -21,13 +22,13 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="预约结束时间" min-width="190">
+      <el-table-column label="预约到期时间" min-width="190">
         <template #default="scope">
           {{ formatDateTime(scope.row.end_time) }}
         </template>
       </el-table-column>
 
-      <el-table-column label="创建时间" min-width="190">
+      <el-table-column label="提交预约时间" min-width="190">
         <template #default="scope">
           {{ formatDateTime(scope.row.create_time) }}
         </template>
@@ -70,7 +71,7 @@ const loadReservations = async () => {
     const res = await axios.get(`${API_BASE_URL}/api/reservation/list`)
     reservationList.value = res.data.data
   } catch (error) {
-    console.error(error)
+    console.error('预约记录获取失败：', error)
     ElMessage.error('预约记录获取失败，请检查后端接口')
   }
 }

@@ -149,7 +149,9 @@ const toMysqlDateTime = (date) => {
 const reserve = async (row) => {
   try {
     const now = new Date()
-    const end = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+
+    // 预约有效期为 5 分钟
+    const end = new Date(now.getTime() + 5 * 60 * 1000)
 
     await axios.post(`${API_BASE_URL}/api/reservation/add`, {
       user_id: 1,
@@ -158,7 +160,7 @@ const reserve = async (row) => {
       end_time: toMysqlDateTime(end)
     })
 
-    ElMessage.success('预约成功，请在 5 分钟内开始充电，否则系统将自动取消预约')
+    ElMessage.success('预约成功，系统将在 5 分钟后自动确认充电并生成充电记录')
 
     await loadPileList()
   } catch (error) {
