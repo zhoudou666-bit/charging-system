@@ -15,19 +15,19 @@
       <el-table-column prop="pile_name" label="充电桩" width="160" />
       <el-table-column prop="location" label="位置" width="180" />
 
-      <el-table-column label="预约开始时间" min-width="180">
+      <el-table-column label="预约开始时间" min-width="190">
         <template #default="scope">
           {{ formatDateTime(scope.row.start_time) }}
         </template>
       </el-table-column>
 
-      <el-table-column label="预约结束时间" min-width="180">
+      <el-table-column label="预约结束时间" min-width="190">
         <template #default="scope">
           {{ formatDateTime(scope.row.end_time) }}
         </template>
       </el-table-column>
 
-      <el-table-column label="创建时间" min-width="180">
+      <el-table-column label="创建时间" min-width="190">
         <template #default="scope">
           {{ formatDateTime(scope.row.create_time) }}
         </template>
