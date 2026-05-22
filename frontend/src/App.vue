@@ -66,6 +66,7 @@
       </div>
       <div>数据来源：Railway MySQL 云数据库</div>
       <div>智能体流程：场景感知 → 风险识别 → 等级判断 → 预警处置</div>
+      <div>预约机制：5 分钟未充电自动取消</div>
     </div>
 
     <!-- 主功能面板 -->
@@ -73,6 +74,10 @@
       <el-tabs v-model="activeTab" @tab-change="loadStats">
         <el-tab-pane label="充电桩监测" name="pile">
           <PileList />
+        </el-tab-pane>
+
+        <el-tab-pane label="预约记录" name="reservation">
+          <ReservationList />
         </el-tab-pane>
 
         <el-tab-pane label="充电数据记录" name="data">
@@ -98,6 +103,7 @@ import { API_BASE_URL } from './api'
 
 import Login from './components/Login.vue'
 import PileList from './components/PileList.vue'
+import ReservationList from './components/ReservationList.vue'
 import ChargingData from './components/ChargingData.vue'
 import WarningList from './components/WarningList.vue'
 import AiMock from './components/AiMock.vue'
