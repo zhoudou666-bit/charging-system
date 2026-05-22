@@ -1,12 +1,22 @@
 <template>
   <div>
-    <h2>充电桩状态监测</h2>
+    <div class="page-header">
+      <div>
+        <h2>充电桩状态监测</h2>
+        <p>查看校园充电桩实时状态，支持空闲充电桩预约与实时数据采集。</p>
+      </div>
+
+      <el-button type="primary" @click="loadPileList">
+        刷新充电桩
+      </el-button>
+    </div>
 
     <el-table :data="pileList" border style="width: 100%;">
-      <el-table-column prop="pile_name" label="充电桩名称" />
-      <el-table-column prop="location" label="位置" />
+      <el-table-column prop="pile_name" label="充电桩名称" min-width="160" />
 
-      <el-table-column label="状态">
+      <el-table-column prop="location" label="位置" min-width="180" />
+
+      <el-table-column label="状态" width="120">
         <template #default="scope">
           <el-tag v-if="scope.row.status === '空闲'" type="success">空闲</el-tag>
           <el-tag v-else-if="scope.row.status === '占用'" type="warning">占用</el-tag>
@@ -15,7 +25,13 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="260">
+      <el-table-column label="更新时间" min-width="180">
+        <template #default="scope">
+          {{ formatDateTime(scope.row.update_time) }}
+        </template>
+      </el-table-column>
+
+      <el-table-column label="操作" width="280">
         <template #default="scope">
           <el-button type="primary" @click="simulate(scope.row)">
             查看实时数据
@@ -32,19 +48,47 @@
       </el-table-column>
     </el-table>
 
-    <el-card v-if="currentData" style="margin-top: 20px;">
-      <h3>实时充电数据</h3>
-      <p>充电桩编号：{{ currentData.pile_id }}</p>
-      <p>电压：{{ currentData.voltage }} V</p>
-      <p>电流：{{ currentData.current_value }} A</p>
-      <p>功率：{{ currentData.power }} kW</p>
-      <p>状态判断：{{ currentData.warning_status }}</p>
+    <el-card v-if="currentData" class="data-card">
+      <template #header>
+        <div class="card-header">
+          <span>实时充电数据</span>
+          <el-tag
+            :type="currentData.warning_status === '正常' ? 'success' : 'warning'"
+          >
+            {{ currentData.warning_status }}
+          </el-tag>
+        </div>
+      </template>
+
+      <div class="data-grid">
+        <div class="data-item">
+          <span class="label">充电桩编号</span>
+          <span class="value">{{ currentData.pile_id }}</span>
+        </div>
+
+        <div class="data-item">
+          <span class="label">电压</span>
+          <span class="value">{{ currentData.voltage }} V</span>
+        </div>
+
+        <div class="data-item">
+          <span class="label">电流</span>
+          <span class="value">{{ currentData.current_value }} A</span>
+        </div>
+
+        <div class="data-item">
+          <span class="label">功率</span>
+          <span class="value">{{ currentData.power }} kW</span>
+        </div>
+      </div>
 
       <el-alert
         v-if="currentData.warning_status !== '正常'"
         :title="currentData.warning_status"
+        description="检测到充电风险，系统已自动生成安全预警记录。"
         type="warning"
         show-icon
+        style="margin-top: 16px;"
       />
     </el-card>
   </div>
@@ -55,6 +99,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
 import { ElMessage } from 'element-plus'
+import { formatDateTime } from '../utils/time'
 
 const pileList = ref([])
 const currentData = ref(null)
@@ -80,25 +125,47 @@ const simulate = async (row) => {
     if (currentData.value.warning_status !== '正常') {
       ElMessage.warning('检测到过载风险，已生成预警记录')
     }
+
+    await loadPileList()
   } catch (error) {
     console.error('获取实时数据失败：', error)
     ElMessage.error('获取实时数据失败，请检查后端接口')
   }
 }
 
+const toMysqlDateTime = (date) => {
+  const pad = (num) => String(num).padStart(2, '0')
+
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hour = pad(date.getHours())
+  const minute = pad(date.getMinutes())
+  const second = pad(date.getSeconds())
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+}
+
 const reserve = async (row) => {
   try {
+    const now = new Date()
+    const end = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+
     await axios.post(`${API_BASE_URL}/api/reservation/add`, {
       user_id: 1,
       pile_id: row.id,
-      start_time: '2026-05-14 10:00:00',
-      end_time: '2026-05-14 12:00:00'
+      start_time: toMysqlDateTime(now),
+      end_time: toMysqlDateTime(end)
     })
 
-    ElMessage.success('预约成功')
+    ElMessage.success('预约成功，请在 5 分钟内开始充电，否则系统将自动取消预约')
+
+    await loadPileList()
   } catch (error) {
     console.error('预约失败：', error)
-    ElMessage.error('预约失败，请检查后端接口')
+
+    const message = error.response?.data?.message || '预约失败，请检查后端接口'
+    ElMessage.error(message)
   }
 }
 
@@ -106,3 +173,74 @@ onMounted(() => {
   loadPileList()
 })
 </script>
+
+<style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+.page-header p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.data-card {
+  margin-top: 22px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 14px;
+}
+
+.data-item {
+  padding: 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.value {
+  font-size: 20px;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .data-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>

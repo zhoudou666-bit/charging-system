@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>预约记录</h2>
-        <p>学生预约充电后，若 5 分钟内未产生充电数据，系统将自动取消预约。</p>
+        <p>学生预约充电后，系统将在 5 分钟后自动确认充电，并生成一条正常充电记录。</p>
       </div>
 
       <el-button type="primary" @click="loadReservations">
@@ -14,9 +14,24 @@
     <el-table :data="reservationList" border style="width: 100%; margin-top: 18px;">
       <el-table-column prop="pile_name" label="充电桩" width="160" />
       <el-table-column prop="location" label="位置" width="180" />
-      <el-table-column prop="start_time" label="预约开始时间" min-width="180" />
-      <el-table-column prop="end_time" label="预约结束时间" min-width="180" />
-      <el-table-column prop="create_time" label="创建时间" min-width="180" />
+
+      <el-table-column label="预约开始时间" min-width="180">
+        <template #default="scope">
+          {{ formatDateTime(scope.row.start_time) }}
+        </template>
+      </el-table-column>
+
+      <el-table-column label="预约结束时间" min-width="180">
+        <template #default="scope">
+          {{ formatDateTime(scope.row.end_time) }}
+        </template>
+      </el-table-column>
+
+      <el-table-column label="创建时间" min-width="180">
+        <template #default="scope">
+          {{ formatDateTime(scope.row.create_time) }}
+        </template>
+      </el-table-column>
 
       <el-table-column label="预约状态" width="130">
         <template #default="scope">
@@ -46,6 +61,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { API_BASE_URL } from '../api'
+import { formatDateTime } from '../utils/time'
 
 const reservationList = ref([])
 

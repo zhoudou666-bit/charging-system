@@ -33,7 +33,11 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="create_time" label="时间" />
+      <el-table-column label="时间" min-width="180">
+  <template #default="scope">
+    {{ formatDateTime(scope.row.create_time) }}
+  </template>
+</el-table-column>
     </el-table>
   </div>
 </template>
@@ -43,6 +47,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
 import { ElMessage } from 'element-plus'
+import { formatDateTime } from '../utils/time'
 
 const dataList = ref([])
 
