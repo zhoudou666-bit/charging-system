@@ -296,7 +296,7 @@ def charging_data_list():
             d.current_value,
             d.power,
             d.warning_status,
-            DATE_FORMAT(d.create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time
+            DATE_FORMAT(d.create_time, '%Y-%m-%d %H:%i:%s') AS create_time
         FROM charging_data d
         LEFT JOIN charging_pile p ON d.pile_id = p.id
         ORDER BY d.create_time DESC
@@ -386,9 +386,9 @@ def reservation_list():
             r.pile_id,
             p.pile_name,
             p.location,
-            DATE_FORMAT(r.start_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS start_time,
-            DATE_FORMAT(r.end_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS end_time,
-            DATE_FORMAT(r.create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time,
+            DATE_FORMAT(r.start_time, '%Y-%m-%d %H:%i:%s') AS start_time,
+            DATE_FORMAT(r.end_time, '%Y-%m-%d %H:%i:%s') AS end_time,
+            DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i:%s') AS create_time,
             r.status
         FROM reservation r
         LEFT JOIN charging_pile p ON r.pile_id = p.id
@@ -419,7 +419,7 @@ def warning_list():
             description,
             status,
             image_path,
-            DATE_FORMAT(create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time
+            DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') AS create_time
         FROM warning_log
         ORDER BY create_time DESC
     """)
