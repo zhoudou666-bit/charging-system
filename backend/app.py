@@ -143,7 +143,7 @@ def pile_list():
             voltage,
             current_value,
             power,
-            DATE_FORMAT(update_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS update_time
+            DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time
         FROM charging_pile
         ORDER BY id ASC
     """)
