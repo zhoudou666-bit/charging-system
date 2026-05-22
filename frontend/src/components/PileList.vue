@@ -133,34 +133,14 @@ const simulate = async (row) => {
   }
 }
 
-const toMysqlDateTime = (date) => {
-  const pad = (num) => String(num).padStart(2, '0')
-
-  const year = date.getFullYear()
-  const month = pad(date.getMonth() + 1)
-  const day = pad(date.getDate())
-  const hour = pad(date.getHours())
-  const minute = pad(date.getMinutes())
-  const second = pad(date.getSeconds())
-
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
-
 const reserve = async (row) => {
   try {
-    const now = new Date()
-
-    // 预约有效期为 5 分钟
-    const end = new Date(now.getTime() + 5 * 60 * 1000)
-
     await axios.post(`${API_BASE_URL}/api/reservation/add`, {
       user_id: 1,
-      pile_id: row.id,
-      start_time: toMysqlDateTime(now),
-      end_time: toMysqlDateTime(end)
+      pile_id: row.id
     })
 
-    ElMessage.success('预约成功，系统将在 5 分钟后自动确认充电并生成充电记录')
+    ElMessage.success('预约成功，预约有效期为 5 分钟，到期后系统将自动确认充电并生成充电记录')
 
     await loadPileList()
   } catch (error) {

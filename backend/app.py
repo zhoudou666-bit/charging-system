@@ -3,42 +3,91 @@ from flask_cors import CORS
 from db import get_conn
 import random
 import datetime
+import os
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
 CORS(app)
 
 
-def cancel_expired_reservations():
+def get_beijing_now():
     """
-    自动取消超时预约：
-    已预约状态下，如果预约创建后 5 分钟内没有产生该充电桩的充电数据，
-    则自动把预约状态改为“已取消”。
+    获取北京时间。
+    Railway 服务器默认可能是 UTC 时间，所以统一使用 UTC+8。
+    """
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+
+
+def format_datetime(value):
+    """
+    Python 后端统一格式化时间，避免 jsonify 把 datetime 转成 GMT 字符串。
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, datetime.datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+
+    return str(value)
+
+
+def complete_expired_reservations():
+    """
+    预约到期后自动确认充电：
+    如果当前北京时间已经超过预约到期时间 end_time，
+    并且预约状态仍为“已预约”，则自动生成一条正常充电记录，
+    并将预约状态改为“已充电”。
     """
     conn = get_conn()
     cursor = conn.cursor()
 
+    now = get_beijing_now()
+
     cursor.execute("""
-        UPDATE reservation r
-        SET r.status = '已取消'
-        WHERE r.status = '已预约'
-          AND TIMESTAMPDIFF(MINUTE, r.create_time, NOW()) >= 5
-          AND NOT EXISTS (
-              SELECT 1
-              FROM charging_data d
-              WHERE d.pile_id = r.pile_id
-                AND d.create_time >= r.create_time
-                AND d.create_time <= DATE_ADD(r.create_time, INTERVAL 5 MINUTE)
-          )
-    """)
+        SELECT 
+            id,
+            pile_id
+        FROM reservation
+        WHERE status = '已预约'
+          AND end_time <= %s
+    """, (now,))
+
+    expired_list = cursor.fetchall()
+
+    for item in expired_list:
+        reservation_id = item["id"]
+        pile_id = item["pile_id"]
+
+        voltage = round(random.uniform(215, 225), 2)
+        current_value = round(random.uniform(2, 5), 2)
+        power = round(voltage * current_value / 1000, 2)
+        warning_status = "正常"
+
+        cursor.execute(
+            """
+            INSERT INTO charging_data(
+                pile_id, voltage, current_value, power, warning_status, create_time
+            )
+            VALUES(%s, %s, %s, %s, %s, %s)
+            """,
+            (pile_id, voltage, current_value, power, warning_status, now)
+        )
+
+        cursor.execute(
+            """
+            UPDATE reservation
+            SET status = '已充电'
+            WHERE id = %s
+            """,
+            (reservation_id,)
+        )
 
     conn.commit()
-    affected = cursor.rowcount
 
     cursor.close()
     conn.close()
 
-    return affected
+    return len(expired_list)
 
 
 @app.route("/")
@@ -49,7 +98,6 @@ def index():
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.json
-    print("收到登录请求：", data)
 
     username = data.get("username")
     password = data.get("password")
@@ -63,8 +111,6 @@ def login():
     )
     user = cursor.fetchone()
 
-    print("查询到的用户：", user)
-
     cursor.close()
     conn.close()
 
@@ -74,22 +120,33 @@ def login():
             "message": "登录成功",
             "data": user
         })
-    else:
-        return jsonify({
-            "code": 401,
-            "message": "账号或密码错误"
-        })
+
+    return jsonify({
+        "code": 401,
+        "message": "账号或密码错误"
+    })
 
 
 @app.route("/api/pile/list", methods=["GET"])
 def pile_list():
-    # 每次查询充电桩时，先自动取消超时预约
-    cancel_expired_reservations()
+    complete_expired_reservations()
 
     conn = get_conn()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM charging_pile")
+    cursor.execute("""
+        SELECT 
+            id,
+            pile_name,
+            location,
+            status,
+            voltage,
+            current_value,
+            power,
+            DATE_FORMAT(update_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS update_time
+        FROM charging_pile
+        ORDER BY id ASC
+    """)
     data = cursor.fetchall()
 
     cursor.close()
@@ -104,8 +161,7 @@ def pile_list():
 
 @app.route("/api/stats", methods=["GET"])
 def stats():
-    # 每次刷新统计卡片时，先自动取消超时预约
-    cancel_expired_reservations()
+    complete_expired_reservations()
 
     conn = get_conn()
     cursor = conn.cursor()
@@ -144,10 +200,14 @@ def stats():
 def simulate_data(pile_id):
     """
     模拟充电数据：
-    点击“查看实时数据”后，会插入一条 charging_data。
+    点击“查看实时数据”后，插入一条 charging_data。
     如果该充电桩存在“已预约”记录，则认为用户已经开始充电，
     将预约状态改为“已充电”。
     """
+    complete_expired_reservations()
+
+    now = get_beijing_now()
+
     voltage = round(random.uniform(215, 225), 2)
     current_value = round(random.uniform(1, 9), 2)
     power = round(voltage * current_value / 1000, 2)
@@ -162,42 +222,46 @@ def simulate_data(pile_id):
     conn = get_conn()
     cursor = conn.cursor()
 
-    # 插入充电数据
     cursor.execute(
         """
-        INSERT INTO charging_data(pile_id, voltage, current_value, power, warning_status)
-        VALUES(%s, %s, %s, %s, %s)
+        INSERT INTO charging_data(
+            pile_id, voltage, current_value, power, warning_status, create_time
+        )
+        VALUES(%s, %s, %s, %s, %s, %s)
         """,
-        (pile_id, voltage, current_value, power, warning_status)
+        (pile_id, voltage, current_value, power, warning_status, now)
     )
 
-    # 如果该充电桩有未超时的预约，则标记为已充电
     cursor.execute(
         """
         UPDATE reservation
         SET status = '已充电'
         WHERE pile_id = %s
           AND status = '已预约'
-          AND TIMESTAMPDIFF(MINUTE, create_time, NOW()) < 5
         """,
         (pile_id,)
     )
 
-    # 如果电流异常，生成预警
     if warning_status != "正常":
+        warning_level = "严重" if warning_status == "严重过载" else "一般"
+
         cursor.execute(
             """
-            INSERT INTO warning_log(warning_type, warning_level, description, status)
-            VALUES(%s, %s, %s, '未处理')
+            INSERT INTO warning_log(
+                warning_type, warning_level, description, status, create_time
+            )
+            VALUES(%s, %s, %s, '未处理', %s)
             """,
             (
                 "过载充电",
-                "严重" if warning_status == "严重过载" else "一般",
-                f"{pile_id}号充电桩电流异常，当前电流为{current_value}A，存在{warning_status}风险"
+                warning_level,
+                f"{pile_id}号充电桩电流异常，当前电流为{current_value}A，存在{warning_status}风险",
+                now
             )
         )
 
     conn.commit()
+
     cursor.close()
     conn.close()
 
@@ -209,18 +273,30 @@ def simulate_data(pile_id):
             "voltage": voltage,
             "current_value": current_value,
             "power": power,
-            "warning_status": warning_status
+            "warning_status": warning_status,
+            "create_time": format_datetime(now)
         }
     })
 
 
 @app.route("/api/charging-data/list", methods=["GET"])
 def charging_data_list():
+    complete_expired_reservations()
+
     conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT d.*, p.pile_name, p.location
+        SELECT 
+            d.id,
+            d.pile_id,
+            p.pile_name,
+            p.location,
+            d.voltage,
+            d.current_value,
+            d.power,
+            d.warning_status,
+            DATE_FORMAT(d.create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time
         FROM charging_data d
         LEFT JOIN charging_pile p ON d.pile_id = p.id
         ORDER BY d.create_time DESC
@@ -238,17 +314,14 @@ def charging_data_list():
 
 @app.route("/api/reservation/add", methods=["POST"])
 def add_reservation():
-    # 新增预约前，先清理已经超时的旧预约
-    cancel_expired_reservations()
+    complete_expired_reservations()
 
     data = request.json
 
     user_id = data.get("user_id")
     pile_id = data.get("pile_id")
-    start_time = data.get("start_time")
-    end_time = data.get("end_time")
 
-    if not user_id or not pile_id or not start_time or not end_time:
+    if not user_id or not pile_id:
         return jsonify({
             "code": 400,
             "message": "预约参数不完整"
@@ -257,7 +330,6 @@ def add_reservation():
     conn = get_conn()
     cursor = conn.cursor()
 
-    # 检查该充电桩是否已经有未完成预约
     cursor.execute("""
         SELECT id
         FROM reservation
@@ -276,28 +348,33 @@ def add_reservation():
             "message": "该充电桩当前已有预约，请选择其他充电桩"
         })
 
+    now = get_beijing_now()
+    end_time = now + datetime.timedelta(minutes=5)
+
     cursor.execute(
         """
-        INSERT INTO reservation(user_id, pile_id, start_time, end_time, status)
-        VALUES(%s, %s, %s, %s, '已预约')
+        INSERT INTO reservation(
+            user_id, pile_id, start_time, end_time, status, create_time
+        )
+        VALUES(%s, %s, %s, %s, '已预约', %s)
         """,
-        (user_id, pile_id, start_time, end_time)
+        (user_id, pile_id, now, end_time, now)
     )
 
     conn.commit()
+
     cursor.close()
     conn.close()
 
     return jsonify({
         "code": 200,
-        "message": "预约成功，请在 5 分钟内开始充电，否则系统将自动取消预约"
+        "message": "预约成功，预约有效期为 5 分钟，到期后系统将自动确认充电并生成充电记录"
     })
 
 
 @app.route("/api/reservation/list", methods=["GET"])
 def reservation_list():
-    # 查询预约记录前，自动取消超时预约
-    cancel_expired_reservations()
+    complete_expired_reservations()
 
     conn = get_conn()
     cursor = conn.cursor()
@@ -309,15 +386,14 @@ def reservation_list():
             r.pile_id,
             p.pile_name,
             p.location,
-            r.start_time,
-            r.end_time,
-            r.status,
-            r.create_time
+            DATE_FORMAT(r.start_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS start_time,
+            DATE_FORMAT(r.end_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS end_time,
+            DATE_FORMAT(r.create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time,
+            r.status
         FROM reservation r
         LEFT JOIN charging_pile p ON r.pile_id = p.id
         ORDER BY r.create_time DESC
     """)
-
     data = cursor.fetchall()
 
     cursor.close()
@@ -335,7 +411,18 @@ def warning_list():
     conn = get_conn()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM warning_log ORDER BY create_time DESC")
+    cursor.execute("""
+        SELECT 
+            id,
+            warning_type,
+            warning_level,
+            description,
+            status,
+            image_path,
+            DATE_FORMAT(create_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS create_time
+        FROM warning_log
+        ORDER BY create_time DESC
+    """)
     data = cursor.fetchall()
 
     cursor.close()
@@ -358,6 +445,7 @@ def handle_warning(warning_id):
     )
 
     conn.commit()
+
     cursor.close()
     conn.close()
 
@@ -370,6 +458,7 @@ def handle_warning(warning_id):
 @app.route("/api/ai/mock-detect", methods=["POST"])
 def mock_ai_detect():
     data = request.json
+    now = get_beijing_now()
 
     warning_type = data.get("warning_type", "电动车进宿舍")
     warning_level = data.get("warning_level", "严重")
@@ -383,17 +472,21 @@ def mock_ai_detect():
 
     cursor.execute(
         """
-        INSERT INTO warning_log(warning_type, warning_level, description, status)
-        VALUES(%s, %s, %s, '未处理')
+        INSERT INTO warning_log(
+            warning_type, warning_level, description, status, create_time
+        )
+        VALUES(%s, %s, %s, '未处理', %s)
         """,
         (
             warning_type,
             warning_level,
-            full_description
+            full_description,
+            now
         )
     )
 
     conn.commit()
+
     cursor.close()
     conn.close()
 
@@ -404,12 +497,12 @@ def mock_ai_detect():
             "warning_type": warning_type,
             "warning_level": warning_level,
             "description": description,
-            "suggestion": suggestion
+            "suggestion": suggestion,
+            "create_time": format_datetime(now)
         }
     })
 
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
