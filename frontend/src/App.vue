@@ -66,7 +66,7 @@
       </div>
       <div>数据来源：Railway MySQL 云数据库</div>
       <div>智能体流程：场景感知 → 风险识别 → 等级判断 → 预警处置</div>
-      <div>预约机制：5 分钟未充电自动取消</div>
+      <div>预约机制：5 分钟到期后自动确认充电</div>
     </div>
 
     <!-- 主功能面板 -->
@@ -77,11 +77,11 @@
         </el-tab-pane>
 
         <el-tab-pane label="预约记录" name="reservation">
-          <ReservationList />
+          <ReservationList :user-role="currentUser.role" />
         </el-tab-pane>
 
         <el-tab-pane label="充电数据记录" name="data">
-          <ChargingData />
+          <ChargingData :user-role="currentUser.role" />
         </el-tab-pane>
 
         <el-tab-pane label="安全预警记录" name="warning">

@@ -47,6 +47,23 @@
           {{ formatDateTime(scope.row.create_time) }}
         </template>
       </el-table-column>
+
+      <el-table-column
+        v-if="props.userRole === 'admin'"
+        label="操作"
+        width="120"
+        fixed="right"
+      >
+        <template #default="scope">
+          <el-button
+            type="danger"
+            size="small"
+            @click="deleteChargingData(scope.row)"
+          >
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </div>
 </template>
@@ -55,8 +72,15 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
+
+const props = defineProps({
+  userRole: {
+    type: String,
+    default: 'student'
+  }
+})
 
 const dataList = ref([])
 
@@ -67,6 +91,43 @@ const loadData = async () => {
   } catch (error) {
     console.error('获取充电记录失败：', error)
     ElMessage.error('获取充电记录失败，请检查后端接口')
+  }
+}
+
+const deleteChargingData = async (row) => {
+  if (props.userRole !== 'admin') {
+    ElMessage.warning('只有管理员可以删除充电数据记录')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除 ${row.pile_name} 的充电数据记录吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const res = await axios.delete(`${API_BASE_URL}/api/charging-data/delete/${row.id}`, {
+      data: {
+        role: props.userRole
+      }
+    })
+
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.message || '充电数据记录删除成功')
+      await loadData()
+    } else {
+      ElMessage.error(res.data.message || '充电数据记录删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除充电数据失败：', error)
+      ElMessage.error('删除充电数据失败，请检查后端接口')
+    }
   }
 }
 

@@ -406,6 +406,80 @@ def reservation_list():
     })
 
 
+@app.route("/api/reservation/delete/<int:reservation_id>", methods=["DELETE"])
+def delete_reservation(reservation_id):
+    data = request.json or {}
+    user_role = data.get("role")
+
+    if user_role != "admin":
+        return jsonify({
+            "code": 403,
+            "message": "无权限删除预约记录"
+        })
+
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM reservation WHERE id = %s",
+        (reservation_id,)
+    )
+
+    conn.commit()
+    affected = cursor.rowcount
+
+    cursor.close()
+    conn.close()
+
+    if affected > 0:
+        return jsonify({
+            "code": 200,
+            "message": "预约记录删除成功"
+        })
+
+    return jsonify({
+        "code": 404,
+        "message": "预约记录不存在"
+    })
+
+
+@app.route("/api/charging-data/delete/<int:data_id>", methods=["DELETE"])
+def delete_charging_data(data_id):
+    data = request.json or {}
+    user_role = data.get("role")
+
+    if user_role != "admin":
+        return jsonify({
+            "code": 403,
+            "message": "无权限删除充电数据记录"
+        })
+
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM charging_data WHERE id = %s",
+        (data_id,)
+    )
+
+    conn.commit()
+    affected = cursor.rowcount
+
+    cursor.close()
+    conn.close()
+
+    if affected > 0:
+        return jsonify({
+            "code": 200,
+            "message": "充电数据记录删除成功"
+        })
+
+    return jsonify({
+        "code": 404,
+        "message": "充电数据记录不存在"
+    })
+
+
 @app.route("/api/warning/list", methods=["GET"])
 def warning_list():
     conn = get_conn()
@@ -452,6 +526,43 @@ def handle_warning(warning_id):
     return jsonify({
         "code": 200,
         "message": "处理成功"
+    })
+
+
+@app.route("/api/warning/delete/<int:warning_id>", methods=["DELETE"])
+def delete_warning(warning_id):
+    data = request.json or {}
+    user_role = data.get("role")
+
+    if user_role != "admin":
+        return jsonify({
+            "code": 403,
+            "message": "无权限删除预警记录"
+        })
+
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM warning_log WHERE id = %s",
+        (warning_id,)
+    )
+
+    conn.commit()
+    affected = cursor.rowcount
+
+    cursor.close()
+    conn.close()
+
+    if affected > 0:
+        return jsonify({
+            "code": 200,
+            "message": "预警记录删除成功"
+        })
+
+    return jsonify({
+        "code": 404,
+        "message": "预警记录不存在"
     })
 
 

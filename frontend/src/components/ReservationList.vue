@@ -53,6 +53,23 @@
           </el-tag>
         </template>
       </el-table-column>
+
+      <el-table-column
+        v-if="props.userRole === 'admin'"
+        label="操作"
+        width="120"
+        fixed="right"
+      >
+        <template #default="scope">
+          <el-button
+            type="danger"
+            size="small"
+            @click="deleteReservation(scope.row)"
+          >
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </div>
 </template>
@@ -60,9 +77,16 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { API_BASE_URL } from '../api'
 import { formatDateTime } from '../utils/time'
+
+const props = defineProps({
+  userRole: {
+    type: String,
+    default: 'student'
+  }
+})
 
 const reservationList = ref([])
 
@@ -73,6 +97,43 @@ const loadReservations = async () => {
   } catch (error) {
     console.error('预约记录获取失败：', error)
     ElMessage.error('预约记录获取失败，请检查后端接口')
+  }
+}
+
+const deleteReservation = async (row) => {
+  if (props.userRole !== 'admin') {
+    ElMessage.warning('只有管理员可以删除预约记录')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除 ${row.pile_name} 的预约记录吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const res = await axios.delete(`${API_BASE_URL}/api/reservation/delete/${row.id}`, {
+      data: {
+        role: props.userRole
+      }
+    })
+
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.message || '预约记录删除成功')
+      await loadReservations()
+    } else {
+      ElMessage.error(res.data.message || '预约记录删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除预约记录失败：', error)
+      ElMessage.error('删除预约记录失败，请检查后端接口')
+    }
   }
 }
 

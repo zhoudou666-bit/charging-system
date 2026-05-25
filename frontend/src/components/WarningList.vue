@@ -4,7 +4,7 @@
 
     <el-alert
       v-if="props.userRole !== 'admin'"
-      title="当前为学生账号，仅可查看预警记录，不能处理预警"
+      title="当前为学生账号，仅可查看预警记录，不能处理或删除预警"
       type="info"
       show-icon
       style="margin-bottom: 15px;"
@@ -51,21 +51,34 @@
         </template>
       </el-table-column>
 
-     <el-table-column label="时间" min-width="180">
-  <template #default="scope">
-    {{ formatDateTime(scope.row.create_time) }}
-  </template>
-</el-table-column>
+      <el-table-column label="时间" min-width="180">
+        <template #default="scope">
+          {{ formatDateTime(scope.row.create_time) }}
+        </template>
+      </el-table-column>
 
-      <el-table-column label="操作" width="120">
+      <el-table-column
+        v-if="props.userRole === 'admin'"
+        label="操作"
+        width="180"
+        fixed="right"
+      >
         <template #default="scope">
           <el-button
             type="success"
             size="small"
             @click="handleWarning(scope.row)"
-            :disabled="scope.row.status === '已处理' || props.userRole !== 'admin'"
+            :disabled="scope.row.status === '已处理'"
           >
             处理
+          </el-button>
+
+          <el-button
+            type="danger"
+            size="small"
+            @click="deleteWarning(scope.row)"
+          >
+            删除
           </el-button>
         </template>
       </el-table-column>
@@ -77,7 +90,7 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 
 const props = defineProps({
@@ -142,12 +155,54 @@ const handleWarning = async (row) => {
   }
 
   try {
-    await axios.post(`${API_BASE_URL}/api/warning/handle/${row.id}`)
-    ElMessage.success('处理成功')
-    loadWarnings()
+    const res = await axios.post(`${API_BASE_URL}/api/warning/handle/${row.id}`)
+
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.message || '处理成功')
+      await loadWarnings()
+    } else {
+      ElMessage.error(res.data.message || '处理失败')
+    }
   } catch (error) {
     console.error('处理预警失败：', error)
     ElMessage.error('处理失败，请检查后端接口')
+  }
+}
+
+const deleteWarning = async (row) => {
+  if (props.userRole !== 'admin') {
+    ElMessage.warning('只有管理员可以删除预警记录')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除这条 ${row.warning_type} 预警记录吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const res = await axios.delete(`${API_BASE_URL}/api/warning/delete/${row.id}`, {
+      data: {
+        role: props.userRole
+      }
+    })
+
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.message || '预警记录删除成功')
+      await loadWarnings()
+    } else {
+      ElMessage.error(res.data.message || '预警记录删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除预警记录失败：', error)
+      ElMessage.error('删除预警记录失败，请检查后端接口')
+    }
   }
 }
 
