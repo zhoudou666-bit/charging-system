@@ -37,6 +37,9 @@ def complete_expired_reservations():
     如果当前北京时间已经超过预约到期时间 end_time，
     并且预约状态仍为“已预约”，则自动生成一条正常充电记录，
     并将预约状态改为“已充电”。
+
+    同时更新 charging_pile 表中的电压、电流、功率和更新时间，
+    让充电桩状态监测页面能看到最新更新时间。
     """
     conn = get_conn()
     cursor = conn.cursor()
@@ -71,6 +74,19 @@ def complete_expired_reservations():
             VALUES(%s, %s, %s, %s, %s, %s)
             """,
             (pile_id, voltage, current_value, power, warning_status, now)
+        )
+
+        cursor.execute(
+            """
+            UPDATE charging_pile
+            SET 
+                voltage = %s,
+                current_value = %s,
+                power = %s,
+                update_time = %s
+            WHERE id = %s
+            """,
+            (voltage, current_value, power, now, pile_id)
         )
 
         cursor.execute(
@@ -147,6 +163,7 @@ def pile_list():
         FROM charging_pile
         ORDER BY id ASC
     """)
+
     data = cursor.fetchall()
 
     cursor.close()
@@ -200,7 +217,8 @@ def stats():
 def simulate_data(pile_id):
     """
     模拟充电数据：
-    点击“查看实时数据”后，插入一条 charging_data。
+    点击“查看实时数据”后，插入一条 charging_data；
+    同时更新 charging_pile 表中的电压、电流、功率和更新时间；
     如果该充电桩存在“已预约”记录，则认为用户已经开始充电，
     将预约状态改为“已充电”。
     """
@@ -230,6 +248,19 @@ def simulate_data(pile_id):
         VALUES(%s, %s, %s, %s, %s, %s)
         """,
         (pile_id, voltage, current_value, power, warning_status, now)
+    )
+
+    cursor.execute(
+        """
+        UPDATE charging_pile
+        SET 
+            voltage = %s,
+            current_value = %s,
+            power = %s,
+            update_time = %s
+        WHERE id = %s
+        """,
+        (voltage, current_value, power, now, pile_id)
     )
 
     cursor.execute(

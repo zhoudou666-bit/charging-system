@@ -33,7 +33,11 @@
 
       <el-table-column label="操作" width="280">
         <template #default="scope">
-          <el-button type="primary" @click="simulate(scope.row)">
+          <el-button
+            type="primary"
+            @click="simulate(scope.row)"
+            :disabled="scope.row.status === '故障'"
+          >
             查看实时数据
           </el-button>
 
@@ -80,6 +84,13 @@
           <span class="label">功率</span>
           <span class="value">{{ currentData.power }} kW</span>
         </div>
+
+        <div class="data-item">
+          <span class="label">采集时间</span>
+          <span class="value time-value">
+            {{ formatDateTime(currentData.create_time) }}
+          </span>
+        </div>
       </div>
 
       <el-alert
@@ -95,7 +106,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
 import { ElMessage } from 'element-plus'
@@ -104,10 +115,12 @@ import { formatDateTime } from '../utils/time'
 const pileList = ref([])
 const currentData = ref(null)
 
+let timer = null
+
 const loadPileList = async () => {
   try {
     const res = await axios.get(`${API_BASE_URL}/api/pile/list`)
-    pileList.value = res.data.data
+    pileList.value = res.data.data || []
   } catch (error) {
     console.error('获取充电桩列表失败：', error)
     ElMessage.error('获取充电桩列表失败，请检查后端是否运行')
@@ -115,6 +128,11 @@ const loadPileList = async () => {
 }
 
 const simulate = async (row) => {
+  if (row.status === '故障') {
+    ElMessage.warning('故障充电桩不可采集实时数据')
+    return
+  }
+
   try {
     const res = await axios.get(`${API_BASE_URL}/api/pile/simulate/${row.id}`)
 
@@ -134,13 +152,24 @@ const simulate = async (row) => {
 }
 
 const reserve = async (row) => {
+  if (row.status !== '空闲') {
+    ElMessage.warning('只有空闲充电桩可以预约')
+    return
+  }
+
   try {
-    await axios.post(`${API_BASE_URL}/api/reservation/add`, {
+    const res = await axios.post(`${API_BASE_URL}/api/reservation/add`, {
       user_id: 1,
       pile_id: row.id
     })
 
-    ElMessage.success('预约成功，预约有效期为 5 分钟，到期后系统将自动确认充电并生成充电记录')
+    if (res.data.code === 200) {
+      ElMessage.success(
+        res.data.message || '预约成功，预约有效期为 5 分钟，到期后系统将自动确认充电并生成充电记录'
+      )
+    } else {
+      ElMessage.error(res.data.message || '预约失败')
+    }
 
     await loadPileList()
   } catch (error) {
@@ -153,6 +182,17 @@ const reserve = async (row) => {
 
 onMounted(() => {
   loadPileList()
+
+  timer = setInterval(() => {
+    loadPileList()
+  }, 10000)
+})
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
 
@@ -190,7 +230,7 @@ onMounted(() => {
 
 .data-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
   gap: 14px;
 }
 
@@ -212,6 +252,16 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 800;
   color: #2563eb;
+}
+
+.time-value {
+  font-size: 15px;
+}
+
+@media (max-width: 1100px) {
+  .data-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 900px) {
